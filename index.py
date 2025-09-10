@@ -8,7 +8,8 @@ import json
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'your-secret-key-here'
-app.config['SQLALCHEMY_DATABASE_URI'] = 'mysql+pymysql://root:ildeniz@192.168.1.165:3306/dataflow_conference?charset=utf8mb4'
+# Debian sunucuda MariaDB kullan
+app.config['SQLALCHEMY_DATABASE_URI'] = 'mysql+pymysql://root:ildeniz@localhost:3306/dataflow_conference?charset=utf8mb4'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 # FreeSWITCH Event Socket ayarları

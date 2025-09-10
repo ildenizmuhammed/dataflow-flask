@@ -13,7 +13,7 @@ def create_database():
     try:
         # MariaDB sunucusuna bağlan (veritabanı olmadan)
         connection = pymysql.connect(
-            host='192.168.1.165',
+            host='localhost',
             port=3306,
             user='root',
             password='ildeniz',
