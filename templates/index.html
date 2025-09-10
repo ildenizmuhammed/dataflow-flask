@@ -3,32 +3,618 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>DataFlow</title>
+    <title>DataFlow - Sesli Konferans</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+    <script src="{{ url_for('static', filename='webrtc.js') }}"></script>
     <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
         body {
-            font-family: Arial, sans-serif;
-            text-align: center;
-            margin-top: 100px;
-            background-color: #f0f0f0;
-        }
-        .container {
-            background-color: white;
-            padding: 50px;
-            border-radius: 10px;
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-            display: inline-block;
-        }
-        h1 {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
             color: #333;
-            font-size: 2.5em;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        .header {
+            text-align: center;
+            margin-bottom: 40px;
+            color: white;
+        }
+        
+        .header h1 {
+            font-size: 3em;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+        
+        .header p {
+            font-size: 1.2em;
+            opacity: 0.9;
+        }
+        
+        .main-content {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 30px;
+            margin-bottom: 30px;
+        }
+        
+        .card {
+            background: white;
+            border-radius: 15px;
+            padding: 30px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            transition: transform 0.3s ease;
+        }
+        
+        .card:hover {
+            transform: translateY(-5px);
+        }
+        
+        .card h2 {
+            color: #667eea;
+            margin-bottom: 20px;
+            font-size: 1.8em;
+        }
+        
+        .form-group {
+            margin-bottom: 20px;
+        }
+        
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #555;
+        }
+        
+        .form-group input, .form-group textarea {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e1e5e9;
+            border-radius: 8px;
+            font-size: 16px;
+            transition: border-color 0.3s ease;
+        }
+        
+        .form-group input:focus, .form-group textarea:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        
+        .btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 12px 30px;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s ease;
+            width: 100%;
+        }
+        
+        .btn:hover {
+            transform: translateY(-2px);
+        }
+        
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+        
+        .rooms-list {
+            grid-column: 1 / -1;
+        }
+        
+        .room-item {
+            background: white;
+            border-radius: 10px;
+            padding: 20px;
+            margin-bottom: 15px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            transition: transform 0.2s ease;
+        }
+        
+        .room-item:hover {
+            transform: translateX(5px);
+        }
+        
+        .room-info h3 {
+            color: #667eea;
+            margin-bottom: 5px;
+        }
+        
+        .room-info p {
+            color: #666;
+            font-size: 0.9em;
+        }
+        
+        .room-stats {
+            text-align: right;
+            color: #666;
+        }
+        
+        .join-btn {
+            background: #28a745;
+            color: white;
+            border: none;
+            padding: 8px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: background 0.3s ease;
+        }
+        
+        .join-btn:hover {
+            background: #218838;
+        }
+        
+        .conference-room {
+            display: none;
+            background: white;
+            border-radius: 15px;
+            padding: 30px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            text-align: center;
+        }
+        
+        .conference-room.active {
+            display: block;
+        }
+        
+        .video-conference {
+            display: grid;
+            grid-template-columns: 1fr 2fr;
+            gap: 20px;
+            margin: 20px 0;
+            min-height: 300px;
+        }
+        
+        .local-video-container {
+            position: relative;
+            background: #f0f0f0;
+            border-radius: 10px;
+            overflow: hidden;
+        }
+        
+        .local-video-container video {
+            width: 100%;
+            height: 200px;
+            object-fit: cover;
+        }
+        
+        .video-label {
+            position: absolute;
+            bottom: 10px;
+            left: 10px;
+            background: rgba(0,0,0,0.7);
+            color: white;
+            padding: 5px 10px;
+            border-radius: 5px;
+            font-size: 0.9em;
+        }
+        
+        .remote-videos {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 10px;
+        }
+        
+        .remote-videos video {
+            width: 100%;
+            height: 120px;
+            object-fit: cover;
+            border-radius: 8px;
+            background: #f0f0f0;
+        }
+        
+        .remote-video {
+            position: relative;
+        }
+        
+        .remote-video::after {
+            content: attr(data-participant-name);
+            position: absolute;
+            bottom: 5px;
+            left: 5px;
+            background: rgba(0,0,0,0.7);
+            color: white;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-size: 0.8em;
+        }
+        
+        .participants-list {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin: 20px 0;
+        }
+        
+        .participant {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 8px;
+            border-left: 4px solid #667eea;
+        }
+        
+        .participant.moderator {
+            border-left-color: #ffc107;
+        }
+        
+        .controls {
+            margin-top: 30px;
+        }
+        
+        .control-btn {
+            background: #dc3545;
+            color: white;
+            border: none;
+            padding: 12px 30px;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            margin: 0 10px;
+        }
+        
+        .control-btn:hover {
+            background: #c82333;
+        }
+        
+        .status {
+            padding: 10px;
+            border-radius: 5px;
+            margin: 10px 0;
+            text-align: center;
+        }
+        
+        .status.success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        
+        .status.error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        
+        @media (max-width: 768px) {
+            .main-content {
+                grid-template-columns: 1fr;
+            }
+            
+            .header h1 {
+                font-size: 2em;
+            }
+            
+            .room-item {
+                flex-direction: column;
+                text-align: center;
+            }
+            
+            .room-stats {
+                margin-top: 10px;
+            }
         }
     </style>
 </head>
 <body>
     <div class="container">
-        <p>***************************</p>
-        <h1>DataFlow'a Hosgeldiniz!</h1>
-        <p>***************************</p>
+        <div class="header">
+            <h1>🎙️ DataFlow Spaces</h1>
+            <p>Sesli konferans odaları oluşturun ve katılın</p>
+        </div>
+        
+        <div id="mainView">
+            <div class="main-content">
+                <div class="card">
+                    <h2>🆕 Yeni Oda Oluştur</h2>
+                    <form id="createRoomForm">
+                        <div class="form-group">
+                            <label for="roomName">Oda Adı</label>
+                            <input type="text" id="roomName" name="name" required placeholder="Örn: Proje Toplantısı">
+                        </div>
+                        <div class="form-group">
+                            <label for="roomDescription">Açıklama (İsteğe bağlı)</label>
+                            <textarea id="roomDescription" name="description" rows="3" placeholder="Oda hakkında kısa açıklama..."></textarea>
+                        </div>
+                        <button type="submit" class="btn">Oda Oluştur</button>
+                    </form>
+                </div>
+                
+                <div class="card">
+                    <h2>👤 Katılımcı Bilgileri</h2>
+                    <form id="participantForm">
+                        <div class="form-group">
+                            <label for="participantName">Adınız</label>
+                            <input type="text" id="participantName" name="name" required placeholder="Adınızı girin">
+                        </div>
+                        <div class="form-group">
+                            <label for="selectedRoom">Katılacağınız Oda</label>
+                            <select id="selectedRoom" name="room_id" required>
+                                <option value="">Oda seçin...</option>
+                            </select>
+                        </div>
+                        <button type="submit" class="btn">Odaya Katıl</button>
+                    </form>
+                </div>
+            </div>
+            
+            <div class="card rooms-list">
+                <h2>🏠 Aktif Odalar</h2>
+                <div id="roomsList">
+                    <p>Yükleniyor...</p>
+                </div>
+            </div>
+        </div>
+        
+        <div id="conferenceView" class="conference-room">
+            <h2 id="conferenceTitle">Konferans Odası</h2>
+            
+            <!-- Video Conference Area -->
+            <div class="video-conference">
+                <div class="local-video-container">
+                    <video id="localVideo" autoplay muted playsinline></video>
+                    <div class="video-label">Siz</div>
+                </div>
+                <div id="remoteVideos" class="remote-videos">
+                    <!-- Remote videos will be added here -->
+                </div>
+            </div>
+            
+            <div id="participantsList" class="participants-list">
+                <!-- Katılımcılar buraya gelecek -->
+            </div>
+            
+            <div class="controls">
+                <button id="muteButton" class="control-btn">🔊 Mute</button>
+                <button id="videoButton" class="control-btn">📹 Video Off</button>
+                <button id="leaveRoomBtn" class="control-btn">🚪 Odadan Çık</button>
+            </div>
+        </div>
+        
+        <div id="statusMessage" class="status" style="display: none;"></div>
     </div>
+
+    <script>
+        // Socket.IO bağlantısı
+        const socket = io();
+        
+        let currentRoom = null;
+        let currentParticipant = null;
+        
+        // DOM elementleri
+        const mainView = document.getElementById('mainView');
+        const conferenceView = document.getElementById('conferenceView');
+        const roomsList = document.getElementById('roomsList');
+        const statusMessage = document.getElementById('statusMessage');
+        
+        // Sayfa yüklendiğinde odaları getir
+        document.addEventListener('DOMContentLoaded', function() {
+            loadRooms();
+            setInterval(loadRooms, 5000); // Her 5 saniyede bir güncelle
+        });
+        
+        // Oda oluşturma formu
+        document.getElementById('createRoomForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const formData = new FormData(e.target);
+            const data = {
+                name: formData.get('name'),
+                description: formData.get('description')
+            };
+            
+            try {
+                const response = await fetch('/api/rooms', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(data)
+                });
+                
+                if (response.ok) {
+                    showStatus('Oda başarıyla oluşturuldu!', 'success');
+                    e.target.reset();
+                    loadRooms();
+                } else {
+                    showStatus('Oda oluşturulurken hata oluştu!', 'error');
+                }
+            } catch (error) {
+                showStatus('Bağlantı hatası!', 'error');
+            }
+        });
+        
+        // Katılım formu
+        document.getElementById('participantForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const formData = new FormData(e.target);
+            const data = {
+                name: formData.get('name'),
+                session_id: generateSessionId()
+            };
+            
+            const roomId = formData.get('room_id');
+            
+            try {
+                const response = await fetch(`/api/rooms/${roomId}/join`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(data)
+                });
+                
+                if (response.ok) {
+                    const participant = await response.json();
+                    currentParticipant = participant;
+                    currentRoom = roomId;
+                    
+                    // Konferans görünümüne geç
+                    showConferenceView(roomId);
+                    
+                    // WebRTC ile konferansa katıl
+                    if (window.webrtcConference) {
+                        const webrtcSuccess = await window.webrtcConference.joinConference(roomId, participant.id);
+                        if (!webrtcSuccess) {
+                            showStatus('WebRTC bağlantısı kurulamadı!', 'error');
+                            return;
+                        }
+                    }
+                    
+                    // Socket.IO ile odaya katıl
+                    socket.emit('join_room', { room_id: roomId });
+                    
+                    showStatus('Odaya başarıyla katıldınız!', 'success');
+                } else {
+                    const error = await response.json();
+                    showStatus(error.error || 'Katılım hatası!', 'error');
+                }
+            } catch (error) {
+                showStatus('Bağlantı hatası!', 'error');
+            }
+        });
+        
+        // Odadan çıkma
+        document.getElementById('leaveRoomBtn').addEventListener('click', function() {
+            if (currentRoom && currentParticipant) {
+                socket.emit('leave_room', { 
+                    room_id: currentRoom, 
+                    participant_id: currentParticipant.id 
+                });
+            }
+            
+            showMainView();
+            currentRoom = null;
+            currentParticipant = null;
+        });
+        
+        // Odaları yükle
+        async function loadRooms() {
+            try {
+                const response = await fetch('/api/rooms');
+                const rooms = await response.json();
+                
+                // Oda listesini güncelle
+                if (rooms.length === 0) {
+                    roomsList.innerHTML = '<p>Henüz aktif oda yok. İlk odayı siz oluşturun!</p>';
+                } else {
+                    roomsList.innerHTML = rooms.map(room => `
+                        <div class="room-item">
+                            <div class="room-info">
+                                <h3>${room.name}</h3>
+                                <p>${room.description || 'Açıklama yok'}</p>
+                            </div>
+                            <div class="room-stats">
+                                <p>👥 ${room.current_participants}/${room.max_participants}</p>
+                                <button class="join-btn" onclick="quickJoin('${room.id}')">Katıl</button>
+                            </div>
+                        </div>
+                    `).join('');
+                }
+                
+                // Katılım formundaki select'i güncelle
+                const select = document.getElementById('selectedRoom');
+                select.innerHTML = '<option value="">Oda seçin...</option>' + 
+                    rooms.map(room => `<option value="${room.id}">${room.name}</option>`).join('');
+                    
+            } catch (error) {
+                console.error('Odalar yüklenirken hata:', error);
+            }
+        }
+        
+        // Hızlı katılım
+        function quickJoin(roomId) {
+            const name = prompt('Adınızı girin:');
+            if (name) {
+                document.getElementById('participantName').value = name;
+                document.getElementById('selectedRoom').value = roomId;
+                document.getElementById('participantForm').dispatchEvent(new Event('submit'));
+            }
+        }
+        
+        // Konferans görünümünü göster
+        function showConferenceView(roomId) {
+            mainView.style.display = 'none';
+            conferenceView.classList.add('active');
+            document.getElementById('conferenceTitle').textContent = `Konferans Odası - ${roomId}`;
+            
+            // Katılımcıları yükle
+            loadParticipants(roomId);
+        }
+        
+        // Ana görünümü göster
+        function showMainView() {
+            mainView.style.display = 'block';
+            conferenceView.classList.remove('active');
+        }
+        
+        // Katılımcıları yükle
+        async function loadParticipants(roomId) {
+            try {
+                const response = await fetch(`/api/rooms/${roomId}/participants`);
+                const participants = await response.json();
+                
+                const participantsList = document.getElementById('participantsList');
+                participantsList.innerHTML = participants.map(p => `
+                    <div class="participant ${p.is_moderator ? 'moderator' : ''}">
+                        <h4>${p.name} ${p.is_moderator ? '👑' : ''}</h4>
+                        <p>${p.is_muted ? '🔇' : '🔊'} ${p.is_moderator ? 'Moderatör' : 'Katılımcı'}</p>
+                    </div>
+                `).join('');
+            } catch (error) {
+                console.error('Katılımcılar yüklenirken hata:', error);
+            }
+        }
+        
+        // Durum mesajı göster
+        function showStatus(message, type) {
+            statusMessage.textContent = message;
+            statusMessage.className = `status ${type}`;
+            statusMessage.style.display = 'block';
+            
+            setTimeout(() => {
+                statusMessage.style.display = 'none';
+            }, 3000);
+        }
+        
+        // Session ID oluştur
+        function generateSessionId() {
+            return 'session_' + Math.random().toString(36).substr(2, 9);
+        }
+        
+        // Socket.IO event listeners
+        socket.on('participants_updated', function(participants) {
+            if (currentRoom) {
+                loadParticipants(currentRoom);
+            }
+        });
+        
+        socket.on('status', function(data) {
+            console.log('Socket status:', data.msg);
+        });
+    </script>
 </body>
 </html>
