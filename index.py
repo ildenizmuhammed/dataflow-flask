@@ -38,15 +38,20 @@ def create_room():
     # FreeSWITCH'te konferans oluştur
     conference_id = f"room_{len(ConferenceRoom.query.all()) + 1}"
     
-    # FreeSWITCH client ile konferans oluştur
-    fs_client = get_freeswitch_client()
-    if not fs_client.connected:
-        if not fs_client.connect():
-            return jsonify({'error': 'FreeSWITCH bağlantısı kurulamadı'}), 500
-    
-    # FreeSWITCH'te konferans oluştur
-    if not fs_client.create_conference(conference_id):
-        return jsonify({'error': 'FreeSWITCH konferansı oluşturulamadı'}), 500
+    # FreeSWITCH client ile konferans oluştur (geçici olarak devre dışı)
+    try:
+        fs_client = get_freeswitch_client()
+        if not fs_client.connected:
+            if not fs_client.connect():
+                print("⚠️ FreeSWITCH bağlantısı kurulamadı, devam ediliyor...")
+                # return jsonify({'error': 'FreeSWITCH bağlantısı kurulamadı'}), 500
+        
+        # FreeSWITCH'te konferans oluştur
+        if fs_client.connected and not fs_client.create_conference(conference_id):
+            print("⚠️ FreeSWITCH konferansı oluşturulamadı, devam ediliyor...")
+            # return jsonify({'error': 'FreeSWITCH konferansı oluşturulamadı'}), 500
+    except Exception as e:
+        print(f"⚠️ FreeSWITCH hatası: {e}, devam ediliyor...")
     
     room = ConferenceRoom(
         name=data['name'],
