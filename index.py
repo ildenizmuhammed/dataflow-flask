@@ -13,7 +13,7 @@ app.config['SQLALCHEMY_DATABASE_URI'] = 'mysql+pymysql://root:ildeniz@localhost:
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 # FreeSWITCH Event Socket ayarları
-FREESWITCH_HOST = 'localhost'
+FREESWITCH_HOST = '192.168.1.163'  # FreeSWITCH sunucusu
 FREESWITCH_PORT = 8021
 FREESWITCH_PASSWORD = 'ClueCon'
 

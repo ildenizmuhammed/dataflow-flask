@@ -10,7 +10,7 @@ import threading
 from typing import Dict, List, Optional
 
 class FreeSWITCHClient:
-    def __init__(self, host='localhost', port=8021, password='ClueCon'):
+    def __init__(self, host='192.168.1.163', port=8021, password='ClueCon'):
         self.host = host
         self.port = port
         self.password = password
