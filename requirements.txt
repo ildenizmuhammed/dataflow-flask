@@ -1,7 +1,8 @@
-flask
-flask-sqlalchemy
-flask-socketio
-requests
-python-socketio
-PyMySQL
-cryptography
+flask==2.3.3
+flask-sqlalchemy==3.0.5
+flask-socketio==5.3.6
+requests==2.31.0
+python-socketio==5.9.0
+PyMySQL==1.1.0
+cryptography==41.0.7
+eventlet==0.33.3

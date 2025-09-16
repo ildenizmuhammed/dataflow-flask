@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
 """
-MySQL veritabanı oluşturma scripti
-DataFlow Conference uygulaması için gerekli tabloları oluşturur
+Database creation script for Clubhouse Spaces
+Creates the database and tables for the audio conference application
 """
 
 import pymysql
-from models import db, ConferenceRoom, Participant
+from models import db, User, Room, RoomMember, SpeakingRequest, RoomInvite
 from index import app
 
 def create_database():
-    """Veritabanını oluştur"""
+    """Create the database and tables"""
     try:
-        # MariaDB sunucusuna bağlan (veritabanı olmadan)
+        # Connect to MariaDB server (without database)
         connection = pymysql.connect(
             host='localhost',
             port=3306,
@@ -21,53 +21,120 @@ def create_database():
         )
         
         with connection.cursor() as cursor:
-            # Veritabanını oluştur
+            # Create database
             cursor.execute("CREATE DATABASE IF NOT EXISTS dataflow_conference CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci")
-            print("✅ Veritabanı oluşturuldu: dataflow_conference")
+            print("✅ Database created: dataflow_conference")
         
         connection.close()
         
-        # Flask uygulaması ile tabloları oluştur
+        # Create tables using Flask app
         with app.app_context():
             db.create_all()
-            print("✅ Tablolar oluşturuldu:")
-            print("   - conference_room")
-            print("   - participant")
+            print("✅ Tables created:")
+            print("   - user")
+            print("   - room")
+            print("   - room_member")
+            print("   - speaking_request")
+            print("   - room_invite")
         
-        print("\n🎉 MariaDB veritabanı kurulumu tamamlandı!")
-        print("📊 Veritabanı bilgileri:")
-        print("   Host: 192.168.1.165:3306")
+        print("\n🎉 Clubhouse Spaces database setup completed!")
+        print("📊 Database information:")
+        print("   Host: localhost:3306")
         print("   Database: dataflow_conference")
         print("   User: root")
         print("   Type: MariaDB")
         
     except Exception as e:
-        print(f"❌ Hata: {e}")
+        print(f"❌ Error: {e}")
         return False
     
     return True
 
 def test_connection():
-    """Veritabanı bağlantısını test et"""
+    """Test database connection"""
     try:
         with app.app_context():
-            # Test sorgusu
-            rooms = ConferenceRoom.query.all()
-            print(f"✅ Bağlantı başarılı! Mevcut oda sayısı: {len(rooms)}")
+            # Test query
+            users = User.query.all()
+            rooms = Room.query.all()
+            print(f"✅ Connection successful! Users: {len(users)}, Rooms: {len(rooms)}")
             return True
     except Exception as e:
-        print(f"❌ Bağlantı hatası: {e}")
+        print(f"❌ Connection error: {e}")
         return False
 
+def create_sample_data():
+    """Create sample data for testing"""
+    try:
+        with app.app_context():
+            # Check if sample data already exists
+            if User.query.first():
+                print("ℹ️ Sample data already exists, skipping...")
+                return
+            
+            # Create sample users
+            user1 = User(
+                username='admin',
+                display_name='Admin User',
+                email='admin@example.com',
+                bio='System administrator'
+            )
+            
+            user2 = User(
+                username='demo',
+                display_name='Demo User',
+                email='demo@example.com',
+                bio='Demo user for testing'
+            )
+            
+            db.session.add(user1)
+            db.session.add(user2)
+            db.session.commit()
+            
+            # Create sample room
+            room = Room(
+                name='Welcome Room',
+                description='Welcome to Clubhouse Spaces! This is a demo room.',
+                is_public=True,
+                max_participants=50,
+                owner_id=user1.id
+            )
+            
+            db.session.add(room)
+            db.session.commit()
+            
+            # Add owner as member
+            member = RoomMember(
+                user_id=user1.id,
+                room_id=room.id,
+                can_speak=True,
+                is_moderator=True
+            )
+            
+            db.session.add(member)
+            room.current_participants = 1
+            db.session.commit()
+            
+            print("✅ Sample data created:")
+            print("   - 2 users (admin, demo)")
+            print("   - 1 public room (Welcome Room)")
+            print("   - Admin user is room owner and moderator")
+            
+    except Exception as e:
+        print(f"❌ Error creating sample data: {e}")
+
 if __name__ == '__main__':
-    print("🚀 DataFlow Conference - MariaDB Veritabanı Kurulumu")
-    print("=" * 55)
+    print("🚀 Clubhouse Spaces - Database Setup")
+    print("=" * 40)
     
     if create_database():
-        print("\n🔍 Bağlantı testi yapılıyor...")
-        test_connection()
+        print("\n🔍 Testing connection...")
+        if test_connection():
+            print("\n📝 Creating sample data...")
+            create_sample_data()
     
-    print("\n📝 Sonraki adımlar:")
-    print("1. Flask uygulamasını çalıştırın: python index.py")
-    print("2. Tarayıcıda https://dataflow.mildeniz.space/ adresine gidin")
-    print("3. İlk konferans odanızı oluşturun!")
+    print("\n📝 Next steps:")
+    print("1. Run Flask app: python index.py")
+    print("2. Open browser: http://localhost:5000")
+    print("3. Login with username 'admin' or 'demo'")
+    print("4. Create your first room or join the Welcome Room!")

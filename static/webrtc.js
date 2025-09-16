@@ -1,105 +1,182 @@
-// WebRTC integration for DataFlow Spaces
-class WebRTCConference {
+// WebRTC Audio Conference Manager for Clubhouse-style app
+class WebRTCAudioConference {
     constructor() {
         this.localStream = null;
         this.remoteStreams = new Map();
         this.peerConnections = new Map();
         this.roomId = null;
-        this.participantId = null;
+        this.userId = null;
         this.isMuted = false;
-        this.isVideoEnabled = true;
+        this.isSpeaking = false;
         
-        // FreeSWITCH WebRTC server configuration
-        this.freeswitchConfig = {
+        // ICE servers configuration
+        this.iceServers = {
             iceServers: [
                 { urls: 'stun:stun.l.google.com:19302' },
-                { urls: 'stun:stun1.l.google.com:19302' }
+                { urls: 'stun:stun1.l.google.com:19302' },
+                { urls: 'stun:stun2.l.google.com:19302' }
             ]
         };
         
-        this.initializeElements();
+        // Audio context for better audio processing
+        this.audioContext = null;
+        this.audioAnalyser = null;
+        this.speakingThreshold = -50; // dB threshold for speaking detection
     }
     
-    initializeElements() {
-        this.localVideo = document.getElementById('localVideo');
-        this.remoteVideos = document.getElementById('remoteVideos');
-        this.muteButton = document.getElementById('muteButton');
-        this.videoButton = document.getElementById('videoButton');
-        this.leaveButton = document.getElementById('leaveButton');
-        
-        this.setupEventListeners();
-    }
-    
-    setupEventListeners() {
-        if (this.muteButton) {
-            this.muteButton.addEventListener('click', () => this.toggleMute());
-        }
-        
-        if (this.videoButton) {
-            this.videoButton.addEventListener('click', () => this.toggleVideo());
-        }
-        
-        if (this.leaveButton) {
-            this.leaveButton.addEventListener('click', () => this.leaveConference());
-        }
-    }
-    
-    async joinConference(roomId, participantId) {
+    async initialize() {
         try {
-            this.roomId = roomId;
-            this.participantId = participantId;
-            
-            // Get user media
+            // Get user media (audio only for Clubhouse style)
             this.localStream = await navigator.mediaDevices.getUserMedia({
-                audio: true,
-                video: true
+                audio: {
+                    echoCancellation: true,
+                    noiseSuppression: true,
+                    autoGainControl: true,
+                    sampleRate: 44100
+                },
+                video: false
             });
             
-            if (this.localVideo) {
-                this.localVideo.srcObject = this.localStream;
-            }
+            // Set up audio context for speaking detection
+            this.setupAudioContext();
             
-            // Connect to FreeSWITCH via WebRTC
-            await this.connectToFreeSWITCH();
-            
-            console.log('Successfully joined conference:', roomId);
+            console.log('WebRTC Audio initialized successfully');
             return true;
-            
         } catch (error) {
-            console.error('Error joining conference:', error);
-            this.showError('Konferansa katılırken hata oluştu: ' + error.message);
+            console.error('Error initializing WebRTC Audio:', error);
             return false;
         }
     }
     
-    async connectToFreeSWITCH() {
+    setupAudioContext() {
         try {
-            // Create WebRTC connection to FreeSWITCH
-            const peerConnection = new RTCPeerConnection(this.freeswitchConfig);
+            this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            const source = this.audioContext.createMediaStreamSource(this.localStream);
+            this.audioAnalyser = this.audioContext.createAnalyser();
+            this.audioAnalyser.fftSize = 256;
+            source.connect(this.audioAnalyser);
             
-            // Add local stream
+            // Start speaking detection
+            this.startSpeakingDetection();
+        } catch (error) {
+            console.error('Error setting up audio context:', error);
+        }
+    }
+    
+    startSpeakingDetection() {
+        const dataArray = new Uint8Array(this.audioAnalyser.frequencyBinCount);
+        
+        const detectSpeaking = () => {
+            this.audioAnalyser.getByteFrequencyData(dataArray);
+            
+            // Calculate average volume
+            let sum = 0;
+            for (let i = 0; i < dataArray.length; i++) {
+                sum += dataArray[i];
+            }
+            const average = sum / dataArray.length;
+            const volume = 20 * Math.log10(average / 255);
+            
+            // Detect speaking
+            const wasSpeaking = this.isSpeaking;
+            this.isSpeaking = volume > this.speakingThreshold && !this.isMuted;
+            
+            // Notify if speaking state changed
+            if (this.isSpeaking !== wasSpeaking) {
+                this.onSpeakingStateChanged(this.isSpeaking);
+            }
+            
+            requestAnimationFrame(detectSpeaking);
+        };
+        
+        detectSpeaking();
+    }
+    
+    onSpeakingStateChanged(isSpeaking) {
+        // Emit to socket for real-time updates
+        if (window.socket && this.roomId && this.userId) {
+            if (isSpeaking) {
+                window.socket.emit('start_speaking', { 
+                    room_id: this.roomId, 
+                    user_id: this.userId 
+                });
+            } else {
+                window.socket.emit('stop_speaking', { 
+                    room_id: this.roomId, 
+                    user_id: this.userId 
+                });
+            }
+        }
+    }
+    
+    async joinRoom(roomId, userId) {
+        this.roomId = roomId;
+        this.userId = userId;
+        
+        try {
+            // Initialize WebRTC
+            const initialized = await this.initialize();
+            if (!initialized) {
+                return false;
+            }
+            
+            // Get existing room members
+            const response = await fetch(`/api/rooms/${roomId}/members`);
+            if (response.ok) {
+                const members = await response.json();
+                
+                // Create peer connections for existing members
+                for (const member of members) {
+                    if (member.user_id !== userId) {
+                        await this.createPeerConnection(member.user_id);
+                    }
+                }
+            }
+            
+            return true;
+        } catch (error) {
+            console.error('Error joining room:', error);
+            return false;
+        }
+    }
+    
+    async createPeerConnection(userId) {
+        const peerConnection = new RTCPeerConnection(this.iceServers);
+        this.peerConnections.set(userId, peerConnection);
+        
+        // Add local stream
+        if (this.localStream) {
             this.localStream.getTracks().forEach(track => {
                 peerConnection.addTrack(track, this.localStream);
             });
-            
-            // Handle remote streams
-            peerConnection.ontrack = (event) => {
-                const remoteStream = event.streams[0];
-                this.addRemoteStream(remoteStream, event.track.id);
-            };
-            
-            // Handle ICE candidates
-            peerConnection.onicecandidate = (event) => {
-                if (event.candidate) {
-                    this.sendIceCandidate(event.candidate);
-                }
-            };
-            
-            // Create offer
-            const offer = await peerConnection.createOffer();
-            await peerConnection.setLocalDescription(offer);
-            
-            // Send offer to FreeSWITCH via Flask API
+        }
+        
+        // Handle remote streams
+        peerConnection.ontrack = (event) => {
+            const remoteStream = event.streams[0];
+            this.remoteStreams.set(userId, remoteStream);
+            this.updateAudioElements();
+        };
+        
+        // Handle ICE candidates
+        peerConnection.onicecandidate = (event) => {
+            if (event.candidate) {
+                this.sendIceCandidate(userId, event.candidate);
+            }
+        };
+        
+        // Create offer
+        const offer = await peerConnection.createOffer();
+        await peerConnection.setLocalDescription(offer);
+        
+        // Send offer to the other user via signaling server
+        await this.sendOffer(userId, offer);
+        
+        return peerConnection;
+    }
+    
+    async sendOffer(userId, offer) {
+        try {
             const response = await fetch('/api/webrtc/offer', {
                 method: 'POST',
                 headers: {
@@ -107,184 +184,166 @@ class WebRTCConference {
                 },
                 body: JSON.stringify({
                     room_id: this.roomId,
-                    participant_id: this.participantId,
+                    from_user_id: this.userId,
+                    to_user_id: userId,
                     offer: offer
                 })
             });
             
             if (response.ok) {
                 const data = await response.json();
-                await peerConnection.setRemoteDescription(data.answer);
-                
-                // Store connection
-                this.peerConnections.set(this.participantId, peerConnection);
-            } else {
-                throw new Error('Failed to establish WebRTC connection');
+                if (data.answer) {
+                    await this.handleAnswer(userId, data.answer);
+                }
             }
-            
         } catch (error) {
-            console.error('FreeSWITCH connection error:', error);
-            throw error;
+            console.error('Error sending offer:', error);
         }
     }
     
-    addRemoteStream(stream, trackId) {
-        const videoElement = document.createElement('video');
-        videoElement.srcObject = stream;
-        videoElement.autoplay = true;
-        videoElement.muted = true; // Prevent echo
-        videoElement.className = 'remote-video';
-        
-        if (this.remoteVideos) {
-            this.remoteVideos.appendChild(videoElement);
-        }
-        
-        this.remoteStreams.set(trackId, stream);
-    }
-    
-    toggleMute() {
-        if (this.localStream) {
-            const audioTrack = this.localStream.getAudioTracks()[0];
-            if (audioTrack) {
-                audioTrack.enabled = !audioTrack.enabled;
-                this.isMuted = !audioTrack.enabled;
-                
-                if (this.muteButton) {
-                    this.muteButton.textContent = this.isMuted ? '🔇 Unmute' : '🔊 Mute';
-                }
-                
-                // Notify server
-                this.sendMuteStatus(this.isMuted);
-            }
+    async handleAnswer(userId, answer) {
+        const peerConnection = this.peerConnections.get(userId);
+        if (peerConnection) {
+            await peerConnection.setRemoteDescription(answer);
         }
     }
     
-    toggleVideo() {
-        if (this.localStream) {
-            const videoTrack = this.localStream.getVideoTracks()[0];
-            if (videoTrack) {
-                videoTrack.enabled = !videoTrack.enabled;
-                this.isVideoEnabled = videoTrack.enabled;
-                
-                if (this.videoButton) {
-                    this.videoButton.textContent = this.isVideoEnabled ? '📹 Video Off' : '📹 Video On';
-                }
-                
-                // Notify server
-                this.sendVideoStatus(this.isVideoEnabled);
-            }
-        }
-    }
-    
-    async leaveConference() {
+    async sendIceCandidate(userId, candidate) {
         try {
-            // Stop local stream
-            if (this.localStream) {
-                this.localStream.getTracks().forEach(track => track.stop());
-            }
-            
-            // Close peer connections
-            this.peerConnections.forEach(connection => {
-                connection.close();
-            });
-            
-            // Clear streams
-            this.remoteStreams.clear();
-            this.peerConnections.clear();
-            
-            // Notify server
-            await fetch('/api/webrtc/leave', {
+            await fetch('/api/webrtc/ice-candidate', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
                 },
                 body: JSON.stringify({
                     room_id: this.roomId,
-                    participant_id: this.participantId
+                    from_user_id: this.userId,
+                    to_user_id: userId,
+                    candidate: candidate
                 })
             });
-            
-            console.log('Left conference successfully');
-            
         } catch (error) {
-            console.error('Error leaving conference:', error);
+            console.error('Error sending ICE candidate:', error);
         }
     }
     
-    sendIceCandidate(candidate) {
-        // Send ICE candidate to server
-        fetch('/api/webrtc/ice-candidate', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                room_id: this.roomId,
-                participant_id: this.participantId,
-                candidate: candidate
-            })
-        }).catch(error => {
-            console.error('Error sending ICE candidate:', error);
+    updateAudioElements() {
+        // Create hidden audio elements for each remote stream
+        this.remoteStreams.forEach((stream, userId) => {
+            let audioElement = document.getElementById(`audio-${userId}`);
+            if (!audioElement) {
+                audioElement = document.createElement('audio');
+                audioElement.id = `audio-${userId}`;
+                audioElement.autoplay = true;
+                audioElement.playsInline = true;
+                audioElement.volume = 0.8; // Default volume
+                document.body.appendChild(audioElement);
+            }
+            audioElement.srcObject = stream;
         });
     }
     
-    sendMuteStatus(isMuted) {
-        fetch('/api/webrtc/mute-status', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                room_id: this.roomId,
-                participant_id: this.participantId,
-                is_muted: isMuted
-            })
-        }).catch(error => {
-            console.error('Error sending mute status:', error);
-        });
+    toggleMute() {
+        if (this.localStream) {
+            const audioTracks = this.localStream.getAudioTracks();
+            audioTracks.forEach(track => {
+                track.enabled = !track.enabled;
+            });
+            this.isMuted = !this.isMuted;
+            
+            // Update speaking state
+            if (this.isMuted) {
+                this.isSpeaking = false;
+                this.onSpeakingStateChanged(false);
+            }
+            
+            return this.isMuted;
+        }
+        return false;
     }
     
-    sendVideoStatus(isVideoEnabled) {
-        fetch('/api/webrtc/video-status', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                room_id: this.roomId,
-                participant_id: this.participantId,
-                is_video_enabled: isVideoEnabled
-            })
-        }).catch(error => {
-            console.error('Error sending video status:', error);
-        });
+    setMute(muted) {
+        if (this.localStream) {
+            const audioTracks = this.localStream.getAudioTracks();
+            audioTracks.forEach(track => {
+                track.enabled = !muted;
+            });
+            this.isMuted = muted;
+            
+            if (muted) {
+                this.isSpeaking = false;
+                this.onSpeakingStateChanged(false);
+            }
+        }
     }
     
-    showError(message) {
-        // Show error message to user
-        const errorDiv = document.createElement('div');
-        errorDiv.className = 'error-message';
-        errorDiv.textContent = message;
-        errorDiv.style.cssText = `
-            position: fixed;
-            top: 20px;
-            right: 20px;
-            background: #ff4444;
-            color: white;
-            padding: 15px;
-            border-radius: 5px;
-            z-index: 1000;
-        `;
+    setVolume(userId, volume) {
+        const audioElement = document.getElementById(`audio-${userId}`);
+        if (audioElement) {
+            audioElement.volume = Math.max(0, Math.min(1, volume));
+        }
+    }
+    
+    async handleNewMember(userId) {
+        // Create peer connection for new member
+        await this.createPeerConnection(userId);
+    }
+    
+    async handleMemberLeft(userId) {
+        // Close peer connection and remove audio element
+        const peerConnection = this.peerConnections.get(userId);
+        if (peerConnection) {
+            peerConnection.close();
+            this.peerConnections.delete(userId);
+        }
         
-        document.body.appendChild(errorDiv);
+        this.remoteStreams.delete(userId);
         
-        setTimeout(() => {
-            document.body.removeChild(errorDiv);
-        }, 5000);
+        const audioElement = document.getElementById(`audio-${userId}`);
+        if (audioElement) {
+            audioElement.remove();
+        }
+    }
+    
+    async leaveRoom() {
+        try {
+            // Close all peer connections
+            this.peerConnections.forEach(connection => {
+                connection.close();
+            });
+            this.peerConnections.clear();
+            
+            // Stop local stream
+            if (this.localStream) {
+                this.localStream.getTracks().forEach(track => {
+                    track.stop();
+                });
+                this.localStream = null;
+            }
+            
+            // Clear remote streams and audio elements
+            this.remoteStreams.forEach((stream, userId) => {
+                const audioElement = document.getElementById(`audio-${userId}`);
+                if (audioElement) {
+                    audioElement.remove();
+                }
+            });
+            this.remoteStreams.clear();
+            
+            // Close audio context
+            if (this.audioContext) {
+                await this.audioContext.close();
+                this.audioContext = null;
+            }
+            
+            console.log('Left room successfully');
+        } catch (error) {
+            console.error('Error leaving room:', error);
+        }
     }
 }
 
-// Initialize WebRTC when page loads
-document.addEventListener('DOMContentLoaded', function() {
-    window.webrtcConference = new WebRTCConference();
+// Initialize WebRTC Audio Conference when page loads
+window.addEventListener('DOMContentLoaded', function() {
+    window.webrtcAudioConference = new WebRTCAudioConference();
 });
