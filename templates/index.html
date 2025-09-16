@@ -1173,6 +1173,19 @@
             return await response.json();
         }
         
+        async function joinRoomAfterCreate(roomId) {
+            // Oda oluşturulduktan sonra kullanıcı zaten oda üyesi olduğu için
+            // sadece member bilgisini al
+            try {
+                const response = await fetch(`/api/rooms/${roomId}/members`);
+                const members = await response.json();
+                return members.find(m => m.user.id === currentUser.id);
+            } catch (error) {
+                console.error('Member bilgisi alınırken hata:', error);
+                return null;
+            }
+        }
+        
         async function loadRoomMembers() {
             try {
                 const response = await fetch(`/api/rooms/${currentRoom.id}/members`);
@@ -1259,8 +1272,15 @@
                     const room = await response.json();
                     hideCreateRoomModal();
                     e.target.reset();
-                    loadRooms();
-                    showStatus('Oda oluşturuldu!', 'success');
+                    
+                    // Oda oluşturulduktan sonra otomatik olarak odaya katıl
+                    currentMember = await joinRoomAfterCreate(room.id);
+                    showRoom(room);
+                    
+                    // Join socket room
+                    socket.emit('join_room', { room_id: room.id, user_id: currentUser.id });
+                    
+                    showStatus('Oda oluşturuldu ve odaya katıldınız!', 'success');
                 } else {
                     const error = await response.json();
                     showStatus(error.error || 'Oda oluşturma hatası!', 'error');
