@@ -89,6 +89,30 @@
             background: rgba(255, 255, 255, 0.1);
         }
         
+        .auth-menu {
+            display: flex;
+            align-items: center;
+        }
+        
+        .auth-menu-btn {
+            background: linear-gradient(45deg, #4ecdc4, #44a08d);
+            border: none;
+            color: #fff;
+            padding: 0.8rem 1.5rem;
+            border-radius: 20px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        
+        .auth-menu-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 16px rgba(78, 205, 196, 0.3);
+        }
+        
         /* Main Content */
         .main-content {
             flex: 1;
@@ -100,10 +124,14 @@
         
         /* Auth Section */
         .auth-section {
-            display: flex;
+            display: none;
             justify-content: center;
             align-items: center;
             min-height: 60vh;
+        }
+        
+        .auth-section.active {
+            display: flex;
         }
         
         .auth-card {
@@ -204,7 +232,7 @@
         
         /* Dashboard */
         .dashboard {
-            display: none;
+            display: block;
         }
         
         .dashboard.active {
@@ -722,13 +750,18 @@
 <body>
     <div class="app-container">
         <!-- Header -->
-        <div class="header" id="header" style="display: none;">
+        <div class="header" id="header">
             <div class="header-content">
                 <div class="logo">🎙️ Clubhouse Spaces</div>
-                <div class="user-info" id="userInfo">
+                <div class="user-info" id="userInfo" style="display: none;">
                     <div class="user-avatar" id="userAvatar">U</div>
                     <div class="user-name" id="userName">Kullanıcı</div>
                     <button class="logout-btn" id="logoutBtn">Çıkış</button>
+                </div>
+                <div class="auth-menu" id="authMenu">
+                    <button class="auth-menu-btn" id="authMenuBtn">
+                        <i class="fas fa-user"></i> Giriş Yap
+                    </button>
                 </div>
             </div>
         </div>
@@ -775,7 +808,7 @@
             <div class="dashboard" id="dashboard">
                 <div class="dashboard-header">
                     <h1 class="dashboard-title">Sesli Sohbet Odaları</h1>
-                    <button class="create-room-btn" id="createRoomBtn">
+                    <button class="create-room-btn" id="createRoomBtn" onclick="handleCreateRoomClick()">
                         <i class="fas fa-plus"></i> Oda Oluştur
                     </button>
                 </div>
@@ -799,6 +832,9 @@
                     </button>
                     <button class="control-btn" id="requestsBtn" style="display: none;">
                         <i class="fas fa-hand-paper"></i> İstekler
+                    </button>
+                    <button class="control-btn danger" id="closeRoomBtn" style="display: none;">
+                        <i class="fas fa-times"></i> Odayı Kapat
                     </button>
                     <button class="control-btn danger" id="leaveRoomBtn">
                         <i class="fas fa-sign-out-alt"></i> Odadan Çık
@@ -907,6 +943,7 @@
         
         // Initialize app
         document.addEventListener('DOMContentLoaded', function() {
+            loadRooms(); // Sayfa yüklendiğinde odaları göster
             checkAuth();
             setupEventListeners();
         });
@@ -917,12 +954,12 @@
                 const response = await fetch('/api/auth/me');
                 if (response.ok) {
                     currentUser = await response.json();
-                    showDashboard();
+                    showUserInfo();
                 } else {
-                    showAuth();
+                    showAuthMenu();
                 }
             } catch (error) {
-                showAuth();
+                showAuthMenu();
             }
         }
         
@@ -945,12 +982,15 @@
             document.getElementById('logoutBtn').addEventListener('click', handleLogout);
             
             // Create room
-            document.getElementById('createRoomBtn').addEventListener('click', showCreateRoomModal);
             document.getElementById('createRoomForm').addEventListener('submit', handleCreateRoom);
             document.getElementById('closeCreateModal').addEventListener('click', hideCreateRoomModal);
             
+            // Auth menu
+            document.getElementById('authMenuBtn').addEventListener('click', showAuthModal);
+            
             // Room controls
             document.getElementById('leaveRoomBtn').addEventListener('click', handleLeaveRoom);
+            document.getElementById('closeRoomBtn').addEventListener('click', handleCloseRoom);
             document.getElementById('inviteBtn').addEventListener('click', handleInvite);
             document.getElementById('requestsBtn').addEventListener('click', showRequestsModal);
             document.getElementById('closeRequestsModal').addEventListener('click', hideRequestsModal);
@@ -986,7 +1026,8 @@
                 
                 if (response.ok) {
                     currentUser = await response.json();
-                    showDashboard();
+                    showUserInfo();
+                    hideAuthModal();
                     showStatus('Giriş başarılı!', 'success');
                 } else {
                     const error = await response.json();
@@ -1014,7 +1055,8 @@
                 
                 if (response.ok) {
                     currentUser = await response.json();
-                    showDashboard();
+                    showUserInfo();
+                    hideAuthModal();
                     showStatus('Kayıt başarılı!', 'success');
                 } else {
                     const error = await response.json();
@@ -1031,7 +1073,7 @@
                 currentUser = null;
                 currentRoom = null;
                 currentMember = null;
-                showAuth();
+                showAuthMenu();
                 showStatus('Çıkış yapıldı!', 'info');
             } catch (error) {
                 showStatus('Çıkış hatası!', 'error');
@@ -1039,23 +1081,32 @@
         }
         
         // UI functions
-        function showAuth() {
-            authSection.style.display = 'flex';
-            header.style.display = 'none';
-            dashboard.classList.remove('active');
-            roomView.classList.remove('active');
+        function showAuthMenu() {
+            document.getElementById('userInfo').style.display = 'none';
+            document.getElementById('authMenu').style.display = 'flex';
         }
         
-        function showDashboard() {
-            authSection.style.display = 'none';
-            header.style.display = 'block';
-            dashboard.classList.add('active');
-            roomView.classList.remove('active');
+        function showUserInfo() {
+            document.getElementById('authMenu').style.display = 'none';
+            document.getElementById('userInfo').style.display = 'flex';
             
             // Update user info
             document.getElementById('userAvatar').textContent = currentUser.display_name.charAt(0).toUpperCase();
             document.getElementById('userName').textContent = currentUser.display_name;
-            
+        }
+        
+        function showAuthModal() {
+            document.getElementById('authSection').classList.add('active');
+        }
+        
+        function hideAuthModal() {
+            document.getElementById('authSection').classList.remove('active');
+        }
+        
+        function showDashboard() {
+            authSection.classList.remove('active');
+            dashboard.classList.add('active');
+            roomView.classList.remove('active');
             loadRooms();
         }
         
@@ -1070,8 +1121,29 @@
             // Show/hide owner controls
             const isOwner = room.owner_id === currentUser.id;
             document.getElementById('requestsBtn').style.display = isOwner ? 'block' : 'none';
+            document.getElementById('closeRoomBtn').style.display = isOwner ? 'block' : 'none';
+            document.getElementById('leaveRoomBtn').style.display = isOwner ? 'none' : 'block';
             
             loadRoomMembers();
+        }
+        
+        // Auth control functions
+        function handleJoinRoom(roomId) {
+            if (!currentUser) {
+                showAuthModal();
+                showStatus('Odaya katılmak için giriş yapmalısınız!', 'error');
+                return;
+            }
+            joinRoom(roomId);
+        }
+        
+        function handleCreateRoomClick() {
+            if (!currentUser) {
+                showAuthModal();
+                showStatus('Oda oluşturmak için giriş yapmalısınız!', 'error');
+                return;
+            }
+            showCreateRoomModal();
         }
         
         // Room functions
@@ -1099,7 +1171,7 @@
                                 <div class="owner-avatar">${room.owner_name.charAt(0).toUpperCase()}</div>
                                 <span class="owner-name">${room.owner_name}</span>
                             </div>
-                            <button class="join-room-btn" onclick="event.stopPropagation(); joinRoom('${room.id}')">
+                            <button class="join-room-btn" onclick="event.stopPropagation(); handleJoinRoom('${room.id}')">
                                 <i class="fas fa-sign-in-alt"></i> Katıl
                             </button>
                         </div>
@@ -1293,13 +1365,37 @@
         // Room controls
         async function handleLeaveRoom() {
             try {
-                await fetch(`/api/rooms/${currentRoom.id}/leave`, { method: 'POST' });
-                currentRoom = null;
-                currentMember = null;
-                showDashboard();
-                showStatus('Odadan çıkıldı!', 'info');
+                const response = await fetch(`/api/rooms/${currentRoom.id}/leave`, { method: 'POST' });
+                if (response.ok) {
+                    currentRoom = null;
+                    currentMember = null;
+                    showDashboard();
+                    showStatus('Odadan çıkıldı!', 'info');
+                } else {
+                    const error = await response.json();
+                    showStatus(error.error || 'Çıkış hatası!', 'error');
+                }
             } catch (error) {
-                showStatus('Çıkış hatası!', 'error');
+                showStatus('Bağlantı hatası!', 'error');
+            }
+        }
+        
+        async function handleCloseRoom() {
+            if (confirm('Odayı kapatmak istediğinizden emin misiniz? Tüm katılımcılar odadan çıkarılacak.')) {
+                try {
+                    const response = await fetch(`/api/rooms/${currentRoom.id}/close`, { method: 'POST' });
+                    if (response.ok) {
+                        currentRoom = null;
+                        currentMember = null;
+                        showDashboard();
+                        showStatus('Oda kapatıldı!', 'info');
+                    } else {
+                        const error = await response.json();
+                        showStatus(error.error || 'Oda kapatma hatası!', 'error');
+                    }
+                } catch (error) {
+                    showStatus('Bağlantı hatası!', 'error');
+                }
             }
         }
         
@@ -1510,6 +1606,15 @@
                 } else {
                     avatar.classList.remove('muted');
                 }
+            }
+        });
+        
+        socket.on('room_closed', function(data) {
+            if (currentRoom && currentRoom.id === data.room_id) {
+                currentRoom = null;
+                currentMember = null;
+                showDashboard();
+                showStatus('Oda kapatıldı!', 'info');
             }
         });
     </script>

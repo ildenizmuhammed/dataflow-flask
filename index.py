@@ -123,6 +123,11 @@ def create_room():
     data = request.get_json()
     user = get_current_user()
     
+    # Kullanıcının zaten aktif bir odası var mı kontrol et
+    existing_room = Room.query.filter_by(owner_id=user.id, is_active=True).first()
+    if existing_room:
+        return jsonify({'error': 'Zaten aktif bir odanız var. Önce mevcut odanızı kapatın.'}), 400
+    
     room = Room(
         name=data['name'],
         description=data.get('description', ''),
@@ -215,16 +220,43 @@ def leave_room_api(room_id):
         return jsonify({'error': 'Not a member of this room'}), 400
     
     room = member.room
-    room.current_participants -= 1
     
-    # Eğer oda sahibi çıkıyorsa, odayı kapat
+    # Eğer oda sahibi çıkıyorsa, önce odayı kapatması gerekiyor
     if room.owner_id == user.id:
-        room.is_active = False
+        return jsonify({'error': 'Oda sahibi olarak odadan çıkamazsınız. Önce odayı kapatın.'}), 400
     
+    room.current_participants -= 1
     db.session.delete(member)
     db.session.commit()
     
     return jsonify({'message': 'Left room successfully'})
+
+@app.route('/api/rooms/<room_id>/close', methods=['POST'])
+@require_auth
+def close_room(room_id):
+    """Odayı kapat (sadece oda sahibi)"""
+    user = get_current_user()
+    room = Room.query.get_or_404(room_id)
+    
+    # Sadece oda sahibi odayı kapatabilir
+    if room.owner_id != user.id:
+        return jsonify({'error': 'Only room owner can close the room'}), 403
+    
+    # Odayı kapat
+    room.is_active = False
+    
+    # Tüm üyeleri odadan çıkar
+    members = RoomMember.query.filter_by(room_id=room_id).all()
+    for member in members:
+        db.session.delete(member)
+    
+    room.current_participants = 0
+    db.session.commit()
+    
+    # Tüm üyelere oda kapandı bildirimi gönder
+    socketio.emit('room_closed', {'room_id': room_id}, room=room_id)
+    
+    return jsonify({'message': 'Room closed successfully'})
 
 @app.route('/api/rooms/<room_id>/members', methods=['GET'])
 def get_room_members(room_id):
